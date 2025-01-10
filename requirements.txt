@@ -1,2 +1,5 @@
 pymem           #内存工具
 pywin32         #windows系统工具
+winreg          #windows注册表
+Cryptodome      #加密
+sqlModel        #数据库模型

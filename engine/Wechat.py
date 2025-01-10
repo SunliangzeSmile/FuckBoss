@@ -9,7 +9,7 @@
 import binascii,os
 from pymem import Pymem,process,pattern
 from win32api import GetFileVersionInfo, HIWORD, LOWORD
-from .Tools import readProcessMemory,readWeChatAccount,pattern_scan_all,readWinReg
+from .Tools import readProcessMemory,readWeChatAccount,pattern_scan_all,readWinReg,decrypt
 
 class Wechat:
     """
@@ -21,10 +21,10 @@ class Wechat:
         module=process.module_from_name(self.handle,"WeChatWin.dll")
         self.baseAddr=module.lpBaseOfDll
         self.imageSize=module.SizeOfImage
-        self.machineBits=self.getMachineBit()
+        self.machineBits=self.__getMachineBit__()
 
 
-    def getMachineBit(self):
+    def __getMachineBit__(self):
         """
         获取机器位数 64 or 32
         """
@@ -32,7 +32,7 @@ class Wechat:
         sizeOfOptionalHeader=self.pm.read_short(address)
         return 0x40 if sizeOfOptionalHeader==0xF0 else 0x20
     
-    def getVersion(self,**kwargs):
+    def __getVersion__(self,**kwargs):
         """
         获取微信版本
         """
@@ -50,7 +50,7 @@ class Wechat:
         return f"{str(HIWORD(msv))}.{str(LOWORD(msv))}.{str(HIWORD(lsv))}.{str(LOWORD(lsv))}"
     
 
-    def searchMemoryFeature(self,parent,child,**kwargs):
+    def __searchMemoryFeature__(self,parent,child,**kwargs):
         """
         内存特征搜索
         """
@@ -63,7 +63,7 @@ class Wechat:
             offset.append(index)
         return offset
     
-    def checkKey(self,key,**kwargs):
+    def __checkKey__(self,key,**kwargs):
         """
         检查公钥
         """
@@ -73,7 +73,7 @@ class Wechat:
             return True
 
     
-    def getKeyAddr(self,list=[],**kwargs):
+    def __getKeyAddr__(self,list=[],**kwargs):
         """
         获取公钥地址
         """
@@ -82,7 +82,7 @@ class Wechat:
         byteLength=0x04 if self.machineBits==0x20 else 0x08
         for pubkey in list:
             keyBytes=pubkey.to_bytes(byteLength,byteorder='little',signed=True)
-            offset=self.searchMemoryFeature(buffer,keyBytes)
+            offset=self.__searchMemoryFeature__(buffer,keyBytes)
             if offset is None or len(offset)==0x00:
                 continue
             else:
@@ -94,7 +94,7 @@ class Wechat:
         """
         获取微信信息
         """
-        version=self.getVersion()
+        version=self.__getVersion__()
         if version is False or version is None:
             print("微信版本获取失败")
             return
@@ -108,7 +108,7 @@ class Wechat:
         else:
             pass
         
-        pubKeyAddrs=self.getKeyAddr(pubKeys)
+        pubKeyAddrs=self.__getKeyAddr__(pubKeys)
         keyLenOffset=0x8c if self.machineBits==0x20 else 0xd0
         key=None
         if pubKeyAddrs is None or len(pubKeyAddrs)==0x00:
@@ -123,9 +123,9 @@ class Wechat:
                     key=self.pm.read_bytes(self.pm.read_longlong(pubAddr-0xd8),keyLen)
                 key=binascii.b2a_hex(key).decode()
 
-                if self.checkKey(key):
+                if self.__checkKey__(key):
                     break
-        wxid=self.getWxid(self.handle)
+        wxid=self.__getWxid__(self.handle)
         return {
             'version': version,
             'pid': self.pm.process_id,
@@ -134,7 +134,7 @@ class Wechat:
             'storePath': self.getStorePath(wxid)
             }
     
-    def getWxid(self,handle):
+    def __getWxid__(self,handle):
         """
         获取登录的微信ID
         """
@@ -149,7 +149,7 @@ class Wechat:
         wxid = max(wxids, key=wxids.count) if wxids else "None"
         return wxid
     
-    def getDefaultStorePath(self,wdir=None):
+    def __getDefaultStorePath__(self,wdir=None):
         """
           获取微信默认文件目录
         """
@@ -177,9 +177,9 @@ class Wechat:
         w_dir = readWinReg(r"Software\Tencent\WeChat", "FileSavePath")
         is_w_dir = True if w_dir == "MyDocument:" else False
         if not is_w_dir:
-            w_dir=self.getDefaultStorePath()
+            w_dir=self.__getDefaultStorePath__()
         else:
-            w_dir = self.getDefaultStorePath(w_dir)
+            w_dir = self.__getDefaultStorePath__(w_dir)
 
         if wxid == "all" and os.path.exists(w_dir):
             return w_dir
@@ -196,3 +196,34 @@ class Wechat:
         version=versions.get(info['version'],None)
         account=readWeChatAccount(self.handle,self.baseAddr,version);
         return {**info,**account}
+    
+    
+    def transform(self,key:str,wxid="all",outDir=None):
+        """
+        解密传输文件
+        """
+        storePath=self.getStorePath(wxid)
+        # 检查输入输出是否存在
+        if not os.path.exists(os.path.dirname(storePath)):
+            return "None"
+        if not outDir or os.path.exists(os.path.dirname(outDir)) is False:
+            os.makedirs(outDir,exist_ok=True)
+        
+        # 循环解密数据
+        tasks=[]
+        for root, dirs, files in os.walk(storePath):
+            for file in files:
+                if '.db' in file[-3:] and 'xInfo.db' !=file:
+                    tasks.append([os.path.join(root,file),os.path.join(outDir,file)])
+                else:
+                    name,suffix=os.path.splitext(file)
+                    if suffix.startswith('db_SQLLITE'):
+                        tasks.append([os.path.join(root,file),os.path.join(outDir,name,".db")])
+                    else:
+                        pass
+        for task in tasks:
+            decrypt(task[0],key,task[1])
+                    
+        
+    
+    
