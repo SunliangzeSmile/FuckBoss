@@ -6,9 +6,10 @@
 # @File          : Wechat.py
 # @Description   : 微信信息
 
-import binascii
+import binascii,os
 from pymem import Pymem,process,pattern
 from win32api import GetFileVersionInfo, HIWORD, LOWORD
+from .Tools import readProcessMemory,readWeChatAccount,pattern_scan_all,readWinReg
 
 class Wechat:
     """
@@ -16,8 +17,9 @@ class Wechat:
     """
     def __init__(self,**kwargs):
         self.pm=Pymem("WeChat.exe")
-        module=process.module_from_name(self.pm.process_handle,"WeChatWin.dll")
-        self.dllBase=module.lpBaseOfDll
+        self.handle=self.pm.process_handle
+        module=process.module_from_name(self.handle,"WeChatWin.dll")
+        self.baseAddr=module.lpBaseOfDll
         self.imageSize=module.SizeOfImage
         self.machineBits=self.getMachineBit()
 
@@ -26,7 +28,7 @@ class Wechat:
         """
         获取机器位数 64 or 32
         """
-        address=self.dllBase+self.pm.read_int(self.dllBase+0x3C)+0x14
+        address=self.baseAddr+self.pm.read_int(self.baseAddr+0x3C)+0x14
         sizeOfOptionalHeader=self.pm.read_short(address)
         return 0x40 if sizeOfOptionalHeader==0xF0 else 0x20
     
@@ -76,7 +78,7 @@ class Wechat:
         获取公钥地址
         """
         result=[]
-        buffer=self.pm.read_bytes(self.dllBase,self.imageSize)
+        buffer=self.pm.read_bytes(self.baseAddr,self.imageSize)
         byteLength=0x04 if self.machineBits==0x20 else 0x08
         for pubkey in list:
             keyBytes=pubkey.to_bytes(byteLength,byteorder='little',signed=True)
@@ -84,7 +86,7 @@ class Wechat:
             if offset is None or len(offset)==0x00:
                 continue
             else:
-                offset[:]=[x+self.dllBase for x in offset]
+                offset[:]=[x+self.baseAddr for x in offset]
                 result+=offset
         return None if len(result)==0x00 else result
 
@@ -123,4 +125,74 @@ class Wechat:
 
                 if self.checkKey(key):
                     break
-        return {'version': version,'key': key}
+        wxid=self.getWxid(self.handle)
+        return {
+            'version': version,
+            'pid': self.pm.process_id,
+            'key': key,
+            'wxid': wxid,
+            'storePath': self.getStorePath(wxid)
+            }
+    
+    def getWxid(self,handle):
+        """
+        获取登录的微信ID
+        """
+        find_num = 100
+        addrs = pattern_scan_all(handle, br'\\Msg\\FTSContact', return_multiple=True, find_num=find_num)
+        wxids = []
+        for addr in addrs:
+            result=readProcessMemory(handle,addr-0x1c,80)
+            result = result.split("\\Msg")[0]
+            result = result.split("\\")[-1]
+            wxids.append(result)
+        wxid = max(wxids, key=wxids.count) if wxids else "None"
+        return wxid
+    
+    def getDefaultStorePath(self,wdir=None):
+        """
+          获取微信默认文件目录
+        """
+        if not wdir:
+            user_profile = os.environ.get("USERPROFILE")
+            path_3ebffe94 = os.path.join(user_profile, r"AppData\Roaming\Tencent\WeChat\All Users\config\3ebffe94.ini")
+            with open(path_3ebffe94, "r", encoding="utf-8") as f:
+                wdir = f.read()
+        #读取文档实际目录路径
+        documents_path =readWinReg(r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders","Personal")
+        documents_paths = os.path.split(documents_path)
+        if "%" in documents_paths[0]:
+            wdir = os.environ.get(documents_paths[0].replace("%", ""))
+            wdir = os.path.join(wdir,os.path.join(*documents_paths[1:]))
+        else:
+            wdir = documents_path
+        return os.path.join(wdir, "WeChat Files")
+    
+    def getStorePath(self,wxid="all"):
+        """
+        获取微信文件目录
+        """
+        if not wxid:
+            return "None"
+        w_dir = readWinReg(r"Software\Tencent\WeChat", "FileSavePath")
+        is_w_dir = True if w_dir == "MyDocument:" else False
+        if not is_w_dir:
+            w_dir=self.getDefaultStorePath()
+        else:
+            w_dir = self.getDefaultStorePath(w_dir)
+
+        if wxid == "all" and os.path.exists(w_dir):
+            return w_dir
+
+        filePath = os.path.join(w_dir, wxid)
+        return filePath if os.path.exists(filePath) else "None"
+    
+
+    def current(self,versions,**kwargs):
+        """
+          获取当前登录微信信息
+        """
+        info=self.getInfo()
+        version=versions.get(info['version'],None)
+        account=readWeChatAccount(self.handle,self.baseAddr,version);
+        return {**info,**account}
