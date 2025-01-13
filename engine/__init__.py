@@ -9,5 +9,5 @@
 
 from .Wechat import Wechat
 from .Tools import readProcessMemory,readWeChatAccount,readWinReg,decrypt,pattern_scan_all
-from .Msg import WeChatMsg
+from .Entities import WeChatMsg,WeChatContact
 

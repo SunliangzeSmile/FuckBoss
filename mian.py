@@ -1,4 +1,4 @@
-from engine import Wechat,WeChatMsg
+from engine import Wechat,WeChatMsg,WeChatContact
 import json
 VERSION_LIST_PATH = "version_list.json"
 VERSION_LIST=None
@@ -14,6 +14,10 @@ if __name__ == '__main__':
     # wechat.transform(info['key'],info['wxid'],info['wxid'])
     # print(info)
     # 读取微信消息
-    msg=WeChatMsg(r'laibazanliaohui\MSG0.db')
-    messages=msg.query(['msgSvrID=7691693580686053305'])
-    print(messages)
+    # msg=WeChatMsg(r'laibazanliaohui\MSG0.db')
+    # messages=msg.query(WeChatMsg.strTalker=='34711172551@chatroom')
+    # print(messages)
+
+    contact=WeChatContact(r'laibazanliaohui\FTSContact.db')
+    result=contact.query(docid=[95,98])
+    print(result)

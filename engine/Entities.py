@@ -4,13 +4,29 @@
 # @Author        : sunliangzesmile
 # @Email         : sunliangzesmile@gmail.com
 # @File          : Msg.py
-# @Description   : 微信文本消息
-from .BaseDb import WechatDB
+# @Description   : 微信实体
+from .BaseDb import WeChatDB
 from typing import Optional
 from sqlmodel import Field
 
+from dataclasses import dataclass
 
-class WeChatMsg(WechatDB, table=True):
+@dataclass
+class WeChatContact(WeChatDB, table=True):
+    """
+    微信通讯录
+    """
+    __tablename__ = 'FTSContact15_content'
+    docid:Optional[int] = Field(default=None,primary_key=True)
+    c0alias:Optional[str] = Field(default=None)
+    c1nickname:Optional[str] = Field(default=None)
+    c2remark:Optional[str] = Field(default=None)
+
+
+class WeChatMsg(WeChatDB, table=True):
+    """
+    微信消息
+    """
     __tablename__ = 'MSG'
     localId:Optional[int] = Field(default=None,primary_key=True)
     talkerId:Optional[int] = Field(default=None)
